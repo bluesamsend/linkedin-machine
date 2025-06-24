@@ -1,0 +1,21 @@
+{
+  "name": "linkedin-machine",
+  "version": "1.0.0",
+  "description": "Slack bot for generating LinkedIn content prompts and tracking team posts",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.17.1",
+    "express": "^4.18.2",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
