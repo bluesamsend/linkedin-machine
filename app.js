@@ -1,5 +1,4 @@
 const { App } = require('@slack/bolt');
-const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
 const OpenAI = require('openai');
@@ -14,6 +13,7 @@ const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET,
   socketMode: false,
+  processBeforeResponse: true
 });
 
 // Data storage paths
@@ -193,26 +193,14 @@ app.command('/linkedin-prompt', async ({ command, ack, respond }) => {
   }
 });
 
-// Health check endpoint for Railway
-const expressApp = express();
-expressApp.get('/', (req, res) => {
-  res.json({ status: 'LinkedIn Machine is running!' });
-});
-
-// Handle Slack events
-expressApp.use('/slack/events', app.receiver.router);
-
 // Start the app
 (async () => {
   await ensureDataDir();
   
   const port = process.env.PORT || 3000;
   
-  // Use Express app to handle both Slack and health checks
-  expressApp.use('/slack/events', app.receiver.router);
+  // Start Slack app
+  await app.start(port);
   
-  // Start the server
-  expressApp.listen(port, () => {
-    console.log(`⚡️ LinkedIn Machine is running on port ${port}!`);
-  });
+  console.log(`⚡️ LinkedIn Machine is running on port ${port}!`);
 })();
