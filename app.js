@@ -206,14 +206,13 @@ expressApp.use('/slack/events', app.receiver.router);
 (async () => {
   await ensureDataDir();
   
-  // Start Slack app
   const port = process.env.PORT || 3000;
-  await app.start(port);
   
-  // Start Express server for health checks
-  expressApp.listen(port + 1, () => {
-    console.log(`Health check server running on port ${port + 1}`);
+  // Use Express app to handle both Slack and health checks
+  expressApp.use('/slack/events', app.receiver.router);
+  
+  // Start the server
+  expressApp.listen(port, () => {
+    console.log(`⚡️ LinkedIn Machine is running on port ${port}!`);
   });
-  
-  console.log('⚡️ LinkedIn Content Bot is running!');
 })();
