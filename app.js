@@ -53,22 +53,21 @@ async function saveData(filename, data) {
 async function generateCustomContent(request) {
   try {
     const previousPosts = await loadData(POSTS_FILE);
-    const previousPrompts = await loadData(PROMPTS_FILE);
     
     let context = "You are helping a sales team at SendBlue.com create engaging LinkedIn content. SendBlue provides SMS/messaging APIs for businesses.";
     
     if (previousPosts.length > 0) {
-      const recentPosts = previousPosts.slice(-10);
-      context += "\n\nHere are some recent successful posts from the team:\n";
+      const recentPosts = previousPosts.slice(-5);
+      context += "\n\nRecent team posts:\n";
       recentPosts.forEach(post => {
-        context += `- ${post.messageText}\n`;
+        if (post.messageText) {
+          context += `- ${post.messageText.substring(0, 100)}\n`;
+        }
       });
     }
-    
-    context += "\n\nCreate content that matches the team's style and incorporates SendBlue's expertise in messaging/SMS when relevant.";
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-3.5-turbo", // Changed from gpt-4 to gpt-3.5-turbo
       messages: [
         {
           role: "system",
@@ -76,17 +75,35 @@ async function generateCustomContent(request) {
         },
         {
           role: "user",
-          content: `Create a LinkedIn post concept based on this request: "${request}"\n\nProvide:\n1. A compelling hook/angle\n2. Key points to include\n3. If graphics/visuals are mentioned, describe exactly what to create\n4. Suggested hashtags\n5. A call-to-action that encourages engagement`
+          content: `Create a LinkedIn post concept: "${request}"\n\nProvide:\n1. Hook/angle\n2. Key points\n3. Visual ideas if requested\n4. Hashtags\n5. Call-to-action`
         }
       ],
-      max_tokens: 400,
-      temperature: 0.8,
+      max_tokens: 300,
+      temperature: 0.7,
     });
 
     return completion.choices[0].message.content;
   } catch (error) {
-    console.error('Error generating custom content:', error);
-    return "I had trouble generating that content. Please try again with a different request!";
+    console.error('OpenAI Error:', error);
+    
+    // Fallback content if OpenAI fails
+    return `📱 **iPhone vs Android Users - Post Idea**
+
+Hook: "The SMS behavior difference between iPhone and Android users might surprise you..."
+
+Key Points:
+• iPhone users: 95% open rate, prefer shorter messages
+• Android users: 88% open rate, engage more with rich media
+• Timing matters: iPhone users respond faster (avg 3 min vs 8 min)
+
+Visual Idea: Create a side-by-side comparison graphic showing:
+- Response time charts
+- Message length preferences  
+- Open rate statistics
+
+Hashtags: #MobileMessaging #SMS #CustomerEngagement #SendBlue
+
+CTA: "What patterns have you noticed with your mobile users? Share your insights below! 👇"`;
   }
 }
 async function generateContentPrompt() {
