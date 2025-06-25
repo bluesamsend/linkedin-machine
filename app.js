@@ -49,7 +49,46 @@ async function saveData(filename, data) {
   }
 }
 
-// Generate LinkedIn content prompt using AI
+// Generate custom LinkedIn content based on user request
+async function generateCustomContent(request) {
+  try {
+    const previousPosts = await loadData(POSTS_FILE);
+    const previousPrompts = await loadData(PROMPTS_FILE);
+    
+    let context = "You are helping a sales team at SendBlue.com create engaging LinkedIn content. SendBlue provides SMS/messaging APIs for businesses.";
+    
+    if (previousPosts.length > 0) {
+      const recentPosts = previousPosts.slice(-10);
+      context += "\n\nHere are some recent successful posts from the team:\n";
+      recentPosts.forEach(post => {
+        context += `- ${post.messageText}\n`;
+      });
+    }
+    
+    context += "\n\nCreate content that matches the team's style and incorporates SendBlue's expertise in messaging/SMS when relevant.";
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        {
+          role: "system",
+          content: context
+        },
+        {
+          role: "user",
+          content: `Create a LinkedIn post concept based on this request: "${request}"\n\nProvide:\n1. A compelling hook/angle\n2. Key points to include\n3. If graphics/visuals are mentioned, describe exactly what to create\n4. Suggested hashtags\n5. A call-to-action that encourages engagement`
+        }
+      ],
+      max_tokens: 400,
+      temperature: 0.8,
+    });
+
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('Error generating custom content:', error);
+    return "I had trouble generating that content. Please try again with a different request!";
+  }
+}
 async function generateContentPrompt() {
   try {
     const previousPosts = await loadData(POSTS_FILE);
@@ -190,6 +229,64 @@ app.command('/linkedin-prompt', async ({ command, ack, respond }) => {
     await respond('Daily LinkedIn prompt posted! 🚀');
   } catch (error) {
     await respond('Error posting prompt. Please try again.');
+  }
+});
+
+// Custom content generation command
+app.command('/linkedin-machine', async ({ command, ack, respond }) => {
+  await ack();
+  
+  try {
+    const request = command.text.trim();
+    
+    if (!request) {
+      await respond({
+        text: "Please provide a specific request! For example:\n• `/linkedin-machine give me post ideas about iPhone vs Android users`\n• `/linkedin-machine create a post about SMS delivery rates with an infographic idea`\n• `/linkedin-machine help me write about customer success stories`"
+      });
+      return;
+    }
+
+    const customContent = await generateCustomContent(request);
+    
+    await app.client.chat.postMessage({
+      token: process.env.SLACK_BOT_TOKEN,
+      channel: command.channel_id,
+      text: `🎯 **Custom LinkedIn Content**\n\n${customContent}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `🎯 *Custom LinkedIn Content*\n\n${customContent}`
+          }
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
+            }
+          ]
+        }
+      ]
+    });
+
+    // Save the custom request and response for learning
+    const prompts = await loadData(PROMPTS_FILE);
+    prompts.push({
+      id: Date.now().toString(),
+      content: customContent,
+      request: request,
+      type: 'custom',
+      timestamp: new Date().toISOString(),
+      channel: command.channel_id
+    });
+    await saveData(PROMPTS_FILE, prompts);
+
+  } catch (error) {
+    console.error('Error generating custom content:', error);
+    await respond('Sorry, I had trouble generating that content. Please try again!');
   }
 });
 
