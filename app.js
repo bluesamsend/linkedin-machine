@@ -49,128 +49,19 @@ async function saveData(filename, data) {
   }
 }
 
-// Generate custom LinkedIn content with image
-async function generateCustomContent(request) {
+// Generate LinkedIn content prompt using AI
+async function generateContentPrompt() {
   try {
-    const previousPosts = await loadData(POSTS_FILE);
-    
-    let context = "You are helping a sales team at SendBlue.com create engaging LinkedIn content. SendBlue provides SMS/messaging APIs for businesses.";
-    
-    if (previousPosts.length > 0) {
-      const recentPosts = previousPosts.slice(-5);
-      context += "\n\nRecent team posts:\n";
-      recentPosts.forEach(post => {
-        if (post.messageText) {
-          context += `- ${post.messageText.substring(0, 100)}\n`;
-        }
-      });
-    }
-
-    // Generate text content
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
-          content: context
+          content: "You are a LinkedIn content coach helping a sales team at Sendblue.com create engaging posts. Provide one clear post idea with a hook and 2-3 key points. NO hashtags, NO CTAs. Keep it simple and authentic."
         },
         {
           role: "user",
-          content: `Create a LinkedIn post concept: "${request}"\n\nProvide:\n1. Hook/angle\n2. Key points\n3. Hashtags\n4. Call-to-action\n\nAlso suggest a detailed image description for a professional graphic that would accompany this post.`
-        }
-      ],
-      max_tokens: 300,
-      temperature: 0.7,
-    });
-
-    const textContent = completion.choices[0].message.content;
-
-    // Generate image prompt based on the request
-    let imagePrompt = "";
-    if (request.toLowerCase().includes("iphone") && request.toLowerCase().includes("android")) {
-      imagePrompt = "Professional infographic comparing iPhone vs Android messaging statistics, split-screen design with phone silhouettes, clean charts showing engagement rates, modern blue and white color scheme, business style";
-    } else if (request.toLowerCase().includes("chart") || request.toLowerCase().includes("graph") || request.toLowerCase().includes("data")) {
-      imagePrompt = "Professional business chart or infographic about SMS messaging and customer communication, clean design, corporate colors, data visualization";
-    } else if (request.toLowerCase().includes("comparison")) {
-      imagePrompt = "Professional comparison infographic for business messaging, side-by-side layout, clean corporate design, blue and white theme";
-    } else {
-      imagePrompt = `Professional LinkedIn post graphic about ${request}, business style infographic, clean design, corporate blue and white colors, modern layout`;
-    }
-
-    // Generate image with DALL-E
-    let imageUrl = null;
-    try {
-      const imageResponse = await openai.images.generate({
-        model: "dall-e-3",
-        prompt: imagePrompt,
-        size: "1024x1024",
-        quality: "standard",
-        n: 1,
-      });
-      imageUrl = imageResponse.data[0].url;
-    } catch (imageError) {
-      console.error('Image generation failed:', imageError);
-    }
-
-    return { textContent, imageUrl, imagePrompt };
-
-  } catch (error) {
-    console.error('OpenAI Error:', error);
-    
-    // Fallback content
-    const fallbackContent = `📱 **iPhone vs Android Users - Post Idea**
-
-Hook: "The SMS behavior difference between iPhone and Android users might surprise you..."
-
-Key Points:
-• iPhone users: 95% open rate, prefer shorter messages
-• Android users: 88% open rate, engage more with rich media
-• Timing matters: iPhone users respond faster (avg 3 min vs 8 min)
-
-Hashtags: #MobileMessaging #SMS #CustomerEngagement #SendBlue
-
-CTA: "What patterns have you noticed with your mobile users? Share your insights below! 👇"`;
-
-    return { 
-      textContent: fallbackContent, 
-      imageUrl: null, 
-      imagePrompt: "Professional iPhone vs Android comparison infographic" 
-    };
-  }
-}
-async function generateContentPrompt() {
-  try {
-    const previousPosts = await loadData(POSTS_FILE);
-    const previousPrompts = await loadData(PROMPTS_FILE);
-    
-    let context = "You are helping a sales team at SendBlue.com create engaging LinkedIn content. SendBlue provides SMS/messaging APIs for businesses.";
-    
-    if (previousPosts.length > 0) {
-      const recentPosts = previousPosts.slice(-10);
-      context += "\n\nHere are some recent successful posts from the team:\n";
-      recentPosts.forEach(post => {
-        context += `- ${post.content}\n`;
-      });
-    }
-    
-    if (previousPrompts.length > 0) {
-      const recentPrompts = previousPrompts.slice(-5);
-      context += "\n\nAvoid repeating these recent prompts:\n";
-      recentPrompts.forEach(prompt => {
-        context += `- ${prompt.content}\n`;
-      });
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: context
-        },
-        {
-          role: "user",
-          content: "Generate a specific, actionable LinkedIn post idea that would be valuable for a sales team member to share. Include the angle/hook and 2-3 bullet points on what to include. Make it relevant to messaging/SMS/API space or general sales insights."
+          content: "Generate a LinkedIn post idea about SMS/messaging for a sales team."
         }
       ],
       max_tokens: 200,
@@ -180,7 +71,7 @@ async function generateContentPrompt() {
     return completion.choices[0].message.content;
   } catch (error) {
     console.error('Error generating prompt:', error);
-    return "💡 **Daily LinkedIn Prompt**\n\nShare a quick tip about how businesses can improve their customer communication. What's one SMS/messaging mistake you see companies make, and how can they fix it?\n\n• Include a real example (anonymized)\n• Add your perspective on why it matters\n• End with a question to encourage engagement";
+    return "Share a lesson you learned about customer communication this week. What surprised you?";
   }
 }
 
@@ -192,23 +83,14 @@ async function postDailyPrompt(channelId) {
     const result = await app.client.chat.postMessage({
       token: process.env.SLACK_BOT_TOKEN,
       channel: channelId,
-      text: `🚀 **Daily LinkedIn Content Idea**\n\n${prompt}\n\n_Once you post, share your LinkedIn URL in this thread so the team can engage! 💪_`,
+      text: `🚀 Daily LinkedIn Idea\n\n${prompt}`,
       blocks: [
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `🚀 *Daily LinkedIn Content Idea*\n\n${prompt}`
+            text: `🚀 *Daily LinkedIn Idea*\n\n${prompt}`
           }
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: "_Once you post, share your LinkedIn URL in this thread so the team can engage! 💪_"
-            }
-          ]
         }
       ]
     });
@@ -259,7 +141,7 @@ app.message(async ({ message, say }) => {
 
       // Encourage team engagement
       await say({
-        text: `Great post! 🎉 Team, show some love on this LinkedIn post: ${urls[0]}`,
+        text: `Great post! 🎉 Team, show some love: ${urls[0]}`,
         thread_ts: message.ts
       });
 
@@ -290,176 +172,71 @@ app.command('/linkedin-machine', async ({ command, ack, respond }) => {
     
     if (!request) {
       await respond({
-        text: "Please provide a specific request! For example:\n• `/linkedin-machine give me post ideas about iPhone vs Android users`\n• `/linkedin-machine create a post about SMS delivery rates with an infographic idea`\n• `/linkedin-machine help me write about customer success stories`"
+        text: "Give me a topic! Example: `/linkedin-machine iPhone vs Android users`"
       });
       return;
     }
 
-    // Generate content immediately (without image first)
-    const previousPosts = await loadData(POSTS_FILE);
+    // Generate content with AI
+    let content = "";
+    let useAI = true;
     
-    let context = "You are helping a sales team at SendBlue.com create engaging LinkedIn content. SendBlue provides SMS/messaging APIs for businesses.";
-    
-    if (previousPosts.length > 0) {
-      const recentPosts = previousPosts.slice(-5);
-      context += "\n\nRecent team posts:\n";
-      recentPosts.forEach(post => {
-        if (post.messageText) {
-          context += `- ${post.messageText.substring(0, 100)}\n`;
-        }
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: "You are a LinkedIn content coach helping a modern sales leader write engaging posts. Provide 3 post ideas with hooks and key points. Include 2 relevant article links for inspiration. NO hashtags, NO CTAs. Keep it simple and scroll-stopping."
+          },
+          {
+            role: "user",
+            content: `Give me 3 LinkedIn post ideas about: "${request}"`
+          }
+        ],
+        max_tokens: 400,
+        temperature: 0.8,
       });
+
+      content = completion.choices[0].message.content;
+      
+    } catch (aiError) {
+      console.log('AI failed:', aiError.message);
+      useAI = false;
+      content = `**3 Post Ideas: ${request}**\n\n**Idea 1:** Share a personal observation\n**Idea 2:** Reference industry data\n**Idea 3:** Tell a story about lessons learned\n\n*AI generation failed - try again!*`;
     }
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: context
-        },
-        {
-          role: "user",
-          content: `Create a LinkedIn post concept: "${request}"\n\nProvide:\n1. Hook/angle\n2. Key points\n3. Hashtags\n4. Call-to-action`
-        }
-      ],
-      max_tokens: 300,
-      temperature: 0.7,
-    });
-
-    const textContent = completion.choices[0].message.content;
-
-    // Post text content immediately
-    const initialMessage = await app.client.chat.postMessage({
+    // Post the content
+    await app.client.chat.postMessage({
       token: process.env.SLACK_BOT_TOKEN,
       channel: command.channel_id,
-      text: `🎯 **Custom LinkedIn Content**\n\n${textContent}`,
+      text: `🎯 LinkedIn Post Ideas\n\n${content}`,
       blocks: [
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `🎯 *Custom LinkedIn Content*\n\n${textContent}`
+            text: `🎯 *LinkedIn Post Ideas*${useAI ? ' (AI)' : ' (Fallback)'}\n\n${content}`
           }
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: "🎨 *Generating custom image... this may take a moment!*"
-            }
-          ]
         }
       ]
     });
 
-    // Generate image asynchronously
-    setTimeout(async () => {
-      try {
-        let imagePrompt = "";
-        if (request.toLowerCase().includes("iphone") && request.toLowerCase().includes("android")) {
-          imagePrompt = "Professional infographic comparing iPhone vs Android messaging statistics, split-screen design with phone silhouettes, clean charts showing engagement rates, modern blue and white color scheme, business style";
-        } else if (request.toLowerCase().includes("chart") || request.toLowerCase().includes("graph") || request.toLowerCase().includes("data")) {
-          imagePrompt = "Professional business chart or infographic about SMS messaging and customer communication, clean design, corporate colors, data visualization";
-        } else if (request.toLowerCase().includes("comparison")) {
-          imagePrompt = "Professional comparison infographic for business messaging, side-by-side layout, clean corporate design, blue and white theme";
-        } else {
-          imagePrompt = `Professional LinkedIn post graphic about ${request}, business style infographic, clean design, corporate blue and white colors, modern layout`;
-        }
-
-        const imageResponse = await openai.images.generate({
-          model: "dall-e-3",
-          prompt: imagePrompt,
-          size: "1024x1024",
-          quality: "standard",
-          n: 1,
-        });
-
-        // Update the message with the image
-        await app.client.chat.update({
-          token: process.env.SLACK_BOT_TOKEN,
-          channel: command.channel_id,
-          ts: initialMessage.ts,
-          text: `🎯 **Custom LinkedIn Content**\n\n${textContent}`,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `🎯 *Custom LinkedIn Content*\n\n${textContent}`
-              }
-            },
-            {
-              type: "image",
-              image_url: imageResponse.data[0].url,
-              alt_text: "Generated LinkedIn post graphic"
-            },
-            {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
-                }
-              ]
-            }
-          ]
-        });
-
-      } catch (imageError) {
-        console.error('Image generation failed:', imageError);
-        // Update with failure message
-        await app.client.chat.update({
-          token: process.env.SLACK_BOT_TOKEN,
-          channel: command.channel_id,
-          ts: initialMessage.ts,
-          text: `🎯 **Custom LinkedIn Content**\n\n${textContent}`,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `🎯 *Custom LinkedIn Content*\n\n${textContent}`
-              }
-            },
-            {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "💡 *Image generation failed, but you can manually create a graphic using Canva or similar tools*"
-                }
-              ]
-            },
-            {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
-                }
-              ]
-            }
-          ]
-        });
-      }
-    }, 100);
-
-    // Save the request for learning
+    // Save the request
     const prompts = await loadData(PROMPTS_FILE);
     prompts.push({
       id: Date.now().toString(),
-      content: textContent,
+      content: content,
       request: request,
-      type: 'custom',
+      type: useAI ? 'ai_generated' : 'fallback',
       timestamp: new Date().toISOString(),
       channel: command.channel_id
     });
     await saveData(PROMPTS_FILE, prompts);
 
   } catch (error) {
-    console.error('Error generating custom content:', error);
-    await respond('Sorry, I had trouble generating that content. Please try again!');
+    console.error('Error generating content:', error);
+    await respond('Sorry, something went wrong. Try again!');
   }
 });
 
