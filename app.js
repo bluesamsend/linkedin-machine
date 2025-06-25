@@ -49,7 +49,7 @@ async function saveData(filename, data) {
   }
 }
 
-// Generate custom LinkedIn content based on user request
+// Generate custom LinkedIn content with image
 async function generateCustomContent(request) {
   try {
     const previousPosts = await loadData(POSTS_FILE);
@@ -66,8 +66,9 @@ async function generateCustomContent(request) {
       });
     }
 
+    // Generate text content
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo", // Changed from gpt-4 to gpt-3.5-turbo
+      model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
@@ -75,19 +76,49 @@ async function generateCustomContent(request) {
         },
         {
           role: "user",
-          content: `Create a LinkedIn post concept: "${request}"\n\nProvide:\n1. Hook/angle\n2. Key points\n3. Visual ideas if requested\n4. Hashtags\n5. Call-to-action`
+          content: `Create a LinkedIn post concept: "${request}"\n\nProvide:\n1. Hook/angle\n2. Key points\n3. Hashtags\n4. Call-to-action\n\nAlso suggest a detailed image description for a professional graphic that would accompany this post.`
         }
       ],
       max_tokens: 300,
       temperature: 0.7,
     });
 
-    return completion.choices[0].message.content;
+    const textContent = completion.choices[0].message.content;
+
+    // Generate image prompt based on the request
+    let imagePrompt = "";
+    if (request.toLowerCase().includes("iphone") && request.toLowerCase().includes("android")) {
+      imagePrompt = "Professional infographic comparing iPhone vs Android messaging statistics, split-screen design with phone silhouettes, clean charts showing engagement rates, modern blue and white color scheme, business style";
+    } else if (request.toLowerCase().includes("chart") || request.toLowerCase().includes("graph") || request.toLowerCase().includes("data")) {
+      imagePrompt = "Professional business chart or infographic about SMS messaging and customer communication, clean design, corporate colors, data visualization";
+    } else if (request.toLowerCase().includes("comparison")) {
+      imagePrompt = "Professional comparison infographic for business messaging, side-by-side layout, clean corporate design, blue and white theme";
+    } else {
+      imagePrompt = `Professional LinkedIn post graphic about ${request}, business style infographic, clean design, corporate blue and white colors, modern layout`;
+    }
+
+    // Generate image with DALL-E
+    let imageUrl = null;
+    try {
+      const imageResponse = await openai.images.generate({
+        model: "dall-e-3",
+        prompt: imagePrompt,
+        size: "1024x1024",
+        quality: "standard",
+        n: 1,
+      });
+      imageUrl = imageResponse.data[0].url;
+    } catch (imageError) {
+      console.error('Image generation failed:', imageError);
+    }
+
+    return { textContent, imageUrl, imagePrompt };
+
   } catch (error) {
     console.error('OpenAI Error:', error);
     
-    // Fallback content if OpenAI fails
-    return `📱 **iPhone vs Android Users - Post Idea**
+    // Fallback content
+    const fallbackContent = `📱 **iPhone vs Android Users - Post Idea**
 
 Hook: "The SMS behavior difference between iPhone and Android users might surprise you..."
 
@@ -96,14 +127,15 @@ Key Points:
 • Android users: 88% open rate, engage more with rich media
 • Timing matters: iPhone users respond faster (avg 3 min vs 8 min)
 
-Visual Idea: Create a side-by-side comparison graphic showing:
-- Response time charts
-- Message length preferences  
-- Open rate statistics
-
 Hashtags: #MobileMessaging #SMS #CustomerEngagement #SendBlue
 
 CTA: "What patterns have you noticed with your mobile users? Share your insights below! 👇"`;
+
+    return { 
+      textContent: fallbackContent, 
+      imageUrl: null, 
+      imagePrompt: "Professional iPhone vs Android comparison infographic" 
+    };
   }
 }
 async function generateContentPrompt() {
@@ -263,39 +295,76 @@ app.command('/linkedin-machine', async ({ command, ack, respond }) => {
       return;
     }
 
-    const customContent = await generateCustomContent(request);
+    // Show loading message
+    await respond("🎨 Generating your custom LinkedIn content and image... this may take a moment!");
+
+    const result = await generateCustomContent(request);
     
+    // Prepare the message blocks
+    const blocks = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `🎯 *Custom LinkedIn Content*\n\n${result.textContent}`
+        }
+      }
+    ];
+
+    // Add image if generated successfully
+    if (result.imageUrl) {
+      blocks.push({
+        type: "image",
+        image_url: result.imageUrl,
+        alt_text: "Generated LinkedIn post graphic"
+      });
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `✨ *Generated image prompt:* ${result.imagePrompt}`
+          }
+        ]
+      });
+    } else {
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "💡 *Image generation failed, but you can manually create a graphic using the description above*"
+          }
+        ]
+      });
+    }
+
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
+        }
+      ]
+    });
+
     await app.client.chat.postMessage({
       token: process.env.SLACK_BOT_TOKEN,
       channel: command.channel_id,
-      text: `🎯 **Custom LinkedIn Content**\n\n${customContent}`,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `🎯 *Custom LinkedIn Content*\n\n${customContent}`
-          }
-        },
-        {
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
-            }
-          ]
-        }
-      ]
+      text: `🎯 **Custom LinkedIn Content**\n\n${result.textContent}`,
+      blocks: blocks
     });
 
     // Save the custom request and response for learning
     const prompts = await loadData(PROMPTS_FILE);
     prompts.push({
       id: Date.now().toString(),
-      content: customContent,
+      content: result.textContent,
       request: request,
       type: 'custom',
+      imageUrl: result.imageUrl,
+      imagePrompt: result.imagePrompt,
       timestamp: new Date().toISOString(),
       channel: command.channel_id
     });
