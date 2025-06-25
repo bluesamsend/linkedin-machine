@@ -295,76 +295,163 @@ app.command('/linkedin-machine', async ({ command, ack, respond }) => {
       return;
     }
 
-    // Show loading message
-    await respond("🎨 Generating your custom LinkedIn content and image... this may take a moment!");
-
-    const result = await generateCustomContent(request);
+    // Generate content immediately (without image first)
+    const previousPosts = await loadData(POSTS_FILE);
     
-    // Prepare the message blocks
-    const blocks = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `🎯 *Custom LinkedIn Content*\n\n${result.textContent}`
+    let context = "You are helping a sales team at SendBlue.com create engaging LinkedIn content. SendBlue provides SMS/messaging APIs for businesses.";
+    
+    if (previousPosts.length > 0) {
+      const recentPosts = previousPosts.slice(-5);
+      context += "\n\nRecent team posts:\n";
+      recentPosts.forEach(post => {
+        if (post.messageText) {
+          context += `- ${post.messageText.substring(0, 100)}\n`;
         }
-      }
-    ];
-
-    // Add image if generated successfully
-    if (result.imageUrl) {
-      blocks.push({
-        type: "image",
-        image_url: result.imageUrl,
-        alt_text: "Generated LinkedIn post graphic"
-      });
-      blocks.push({
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: `✨ *Generated image prompt:* ${result.imagePrompt}`
-          }
-        ]
-      });
-    } else {
-      blocks.push({
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: "💡 *Image generation failed, but you can manually create a graphic using the description above*"
-          }
-        ]
       });
     }
 
-    blocks.push({
-      type: "context",
-      elements: [
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
         {
-          type: "mrkdwn",
-          text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
+          role: "system",
+          content: context
+        },
+        {
+          role: "user",
+          content: `Create a LinkedIn post concept: "${request}"\n\nProvide:\n1. Hook/angle\n2. Key points\n3. Hashtags\n4. Call-to-action`
+        }
+      ],
+      max_tokens: 300,
+      temperature: 0.7,
+    });
+
+    const textContent = completion.choices[0].message.content;
+
+    // Post text content immediately
+    const initialMessage = await app.client.chat.postMessage({
+      token: process.env.SLACK_BOT_TOKEN,
+      channel: command.channel_id,
+      text: `🎯 **Custom LinkedIn Content**\n\n${textContent}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `🎯 *Custom LinkedIn Content*\n\n${textContent}`
+          }
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "🎨 *Generating custom image... this may take a moment!*"
+            }
+          ]
         }
       ]
     });
 
-    await app.client.chat.postMessage({
-      token: process.env.SLACK_BOT_TOKEN,
-      channel: command.channel_id,
-      text: `🎯 **Custom LinkedIn Content**\n\n${result.textContent}`,
-      blocks: blocks
-    });
+    // Generate image asynchronously
+    setTimeout(async () => {
+      try {
+        let imagePrompt = "";
+        if (request.toLowerCase().includes("iphone") && request.toLowerCase().includes("android")) {
+          imagePrompt = "Professional infographic comparing iPhone vs Android messaging statistics, split-screen design with phone silhouettes, clean charts showing engagement rates, modern blue and white color scheme, business style";
+        } else if (request.toLowerCase().includes("chart") || request.toLowerCase().includes("graph") || request.toLowerCase().includes("data")) {
+          imagePrompt = "Professional business chart or infographic about SMS messaging and customer communication, clean design, corporate colors, data visualization";
+        } else if (request.toLowerCase().includes("comparison")) {
+          imagePrompt = "Professional comparison infographic for business messaging, side-by-side layout, clean corporate design, blue and white theme";
+        } else {
+          imagePrompt = `Professional LinkedIn post graphic about ${request}, business style infographic, clean design, corporate blue and white colors, modern layout`;
+        }
 
-    // Save the custom request and response for learning
+        const imageResponse = await openai.images.generate({
+          model: "dall-e-3",
+          prompt: imagePrompt,
+          size: "1024x1024",
+          quality: "standard",
+          n: 1,
+        });
+
+        // Update the message with the image
+        await app.client.chat.update({
+          token: process.env.SLACK_BOT_TOKEN,
+          channel: command.channel_id,
+          ts: initialMessage.ts,
+          text: `🎯 **Custom LinkedIn Content**\n\n${textContent}`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `🎯 *Custom LinkedIn Content*\n\n${textContent}`
+              }
+            },
+            {
+              type: "image",
+              image_url: imageResponse.data[0].url,
+              alt_text: "Generated LinkedIn post graphic"
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
+                }
+              ]
+            }
+          ]
+        });
+
+      } catch (imageError) {
+        console.error('Image generation failed:', imageError);
+        // Update with failure message
+        await app.client.chat.update({
+          token: process.env.SLACK_BOT_TOKEN,
+          channel: command.channel_id,
+          ts: initialMessage.ts,
+          text: `🎯 **Custom LinkedIn Content**\n\n${textContent}`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `🎯 *Custom LinkedIn Content*\n\n${textContent}`
+              }
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: "💡 *Image generation failed, but you can manually create a graphic using Canva or similar tools*"
+                }
+              ]
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: "_Once you create this post, share the LinkedIn URL here so the team can engage! 💪_"
+                }
+              ]
+            }
+          ]
+        });
+      }
+    }, 100);
+
+    // Save the request for learning
     const prompts = await loadData(PROMPTS_FILE);
     prompts.push({
       id: Date.now().toString(),
-      content: result.textContent,
+      content: textContent,
       request: request,
       type: 'custom',
-      imageUrl: result.imageUrl,
-      imagePrompt: result.imagePrompt,
       timestamp: new Date().toISOString(),
       channel: command.channel_id
     });
