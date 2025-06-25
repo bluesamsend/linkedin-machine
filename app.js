@@ -153,7 +153,7 @@ app.message(async ({ message, say }) => {
         token: process.env.SLACK_BOT_TOKEN,
         channel: message.channel,
         timestamp: message.ts,
-        name: 'linkedin'
+        name: 'link'
       });
 
       // Store the post data
